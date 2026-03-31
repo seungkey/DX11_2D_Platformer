@@ -1,3 +1,13 @@
+# Visual Studio
+.vs/
+*.vcxproj.user
+*.suo
+*.user
+*.VC.db
+
+# Build results
+Debug/
+Release/
 x64/
 x86/
 build/
