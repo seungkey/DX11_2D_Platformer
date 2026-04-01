@@ -13,6 +13,7 @@ struct ConstantBuffer
     Matrix Model;
     Matrix View;
     Matrix Proj;
+    Vector4 Color;
 };
 
 class Renderer
@@ -23,9 +24,10 @@ public:
     void Clear();
     void ComponentRender(const vector<std::shared_ptr<Entity>> &Entities);
     void RenderEnd();
+    void RenderDebug(const vector<std::shared_ptr<Entity>>& Entities);
 
 private:
-    
+    vector<Vector2> m_quad= { Vector2(-10.f, 10.f),Vector2(10.f,10.f),Vector2(-10.f, -10.f),Vector2(10.f, -10.f) };
 
     template<typename T>
     void CreateVertexBuffer(const vector<T>& vertices, ComPtr<ID3D11Buffer>& vertexBuffer) {
@@ -63,10 +65,13 @@ private:
     // Shader objects
     ComPtr<ID3D11VertexShader>     m_pVertexShader;
     ComPtr<ID3D11PixelShader> m_pPixelShader;
+    ComPtr<ID3DBlob> m_pVSBlob; // Store VSBlob for input layout if needed
     ComPtr<ID3D11InputLayout> m_pInputLayout;
     ComPtr<ID3D11Buffer> m_pVertexBuffer;
+    ComPtr<ID3D11Buffer> m_pDebugVertexBuffer;
     ComPtr<ID3D11Buffer> m_pConstantBuffer;
     ComPtr<ID3D11Buffer> m_pIndexBuffer;
+    ComPtr<ID3D11Buffer> m_pOutlineIndexBuffer;
 
     ConstantBuffer m_constantBufferData;
 };
