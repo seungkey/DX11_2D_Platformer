@@ -3,9 +3,6 @@
 #include "Entity.h"
 #include "Renderer.h"
 
-
-using namespace DirectX::SimpleMath;
-
 // Constant buffer structure
 
 class Game
@@ -16,7 +13,9 @@ public:
 
     void Initialize(HWND hwnd);
     void Shutdown();
-    void Tick();
+    void Update(float dt);
+    void Loop();
+    void FixedUpdate();
 
     std::vector<std::shared_ptr<Entity>> m_entities; // To track all entities for easy loop
 

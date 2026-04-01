@@ -80,8 +80,8 @@ void Renderer::Initialize(HWND hwnd)
     if (FAILED(hr)) return;
 
     //2d는 quad를 그려서 텍스쳐 매핑만 할 예정이라 공용으로 사용할 버텍스 버퍼 생성
-    vector<Vector2> quad = { Vector2(-10.f, 10.f),Vector2(10.f,10.f),Vector2(-10.f, -10.f),Vector2(10.f, -10.f) };//{ Vector2(-0.5f, 0.5f),Vector2(0.5f,0.5f),Vector2(-0.5f, -0.5f),Vector2(0.5f, -0.5f) };
-    CreateVertexBuffer(quad, m_pVertexBuffer);
+    //{ Vector2(-0.5f, 0.5f),Vector2(0.5f,0.5f),Vector2(-0.5f, -0.5f),Vector2(0.5f, -0.5f) };
+    
 
     // Create constant buffer
     D3D11_BUFFER_DESC bd = {};
@@ -123,11 +123,22 @@ void Renderer::Initialize(HWND hwnd)
     {
         return;
     }
+
+    // Initialize Outline Index Buffer
+    std::vector<UINT> outlineIndices = { 0, 1, 3, 2, 0 };
+    D3D11_BUFFER_DESC oibDesc = {};
+    oibDesc.Usage = D3D11_USAGE_DEFAULT;
+    oibDesc.ByteWidth = static_cast<UINT>(sizeof(UINT) * outlineIndices.size());
+    oibDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+    D3D11_SUBRESOURCE_DATA oibData = {};
+    oibData.pSysMem = outlineIndices.data();
+    m_pDevice->CreateBuffer(&oibDesc, &oibData, m_pOutlineIndexBuffer.GetAddressOf());
+
     m_constantBufferData.Proj = Matrix::CreateOrthographicOffCenter(0.f, m_screenWidth, 0.f, m_screenHeight, 0.f, 1.0f);
     m_constantBufferData.Proj = m_constantBufferData.Proj.Transpose();
     //m_constantBufferData.Proj = Matrix::Matrix();
     m_constantBufferData.View = Matrix::Matrix();
-    
+    m_constantBufferData.Color = Vector4(1.0f, 1.0f, 1.0f, 1.0f); // Default white
 }
 
 void Renderer::Clear()
@@ -138,19 +149,71 @@ void Renderer::Clear()
 
 void Renderer::ComponentRender(const vector<std::shared_ptr<Entity>> &Entities)
 {
+    m_pDeviceContext->IASetIndexBuffer(m_pIndexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
+    m_pDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    m_constantBufferData.Color = Vector4(1.0f, 1.0f, 1.0f, 1.0f); // White for standard render
+    m_quad = { Vector2(-10.f, 10.f),Vector2(10.f,10.f),Vector2(-10.f, -10.f),Vector2(10.f, -10.f) };
+    CreateVertexBuffer(m_quad, m_pVertexBuffer);
     for (auto E : Entities)
     {
         TransformComponent* Comp = E->GetComponent<TransformComponent>();
+        if (!Comp) continue;
+
+        // Base quad is 20x20, so we scale it.
+        // If scale is 50x50, final size is 50x50.
+        // Wait, base quad is (-10 to 10), so size is 20.
+        // Scale 1.0 means 20px. 
+        // User said they adjusted scale for (20,20) quad.
         m_constantBufferData.Model = Matrix::CreateScale(Comp->scale.x, Comp->scale.y, 1.0f) * Matrix::CreateTranslation(Comp->position.x, Comp->position.y, 0.0f);
         m_constantBufferData.Model = m_constantBufferData.Model.Transpose();
+        m_constantBufferData.Color = Vector4(1.0f, 1.0f, 1.0f, 1.0f);
         D3D11_MAPPED_SUBRESOURCE ms;
         m_pDeviceContext->Map(m_pConstantBuffer.Get(), NULL, D3D11_MAP_WRITE_DISCARD, NULL, &ms);
         memcpy(ms.pData, &m_constantBufferData, sizeof(m_constantBufferData));
         m_pDeviceContext->Unmap(m_pConstantBuffer.Get(), NULL);
 
         m_pDeviceContext->VSSetConstantBuffers(0, 1, m_pConstantBuffer.GetAddressOf());
-        
-        m_pDeviceContext->DrawIndexed(6, 0, 0);;
+        m_pDeviceContext->PSSetConstantBuffers(0, 1, m_pConstantBuffer.GetAddressOf());
+        m_pDeviceContext->DrawIndexed(6, 0, 0);
+    }
+}
+
+void Renderer::RenderDebug(const vector<std::shared_ptr<Entity>>& Entities)
+{
+    UINT stride = sizeof(Vector2);
+    UINT offset = 0;
+    
+
+    for (auto E : Entities)
+    {
+        auto transform = E->GetComponent<TransformComponent>();
+        auto collider = E->GetComponent<BoxColliderComponent>();
+        m_quad = { Vector2(-1.0f/2,1.0f/2),Vector2(1.0f / 2,1.0f/ 2),Vector2(-1.0f/ 2,-1.0f/ 2),Vector2(1.0f/ 2,-1.0f/ 2) };
+        CreateVertexBuffer(m_quad, m_pDebugVertexBuffer);
+        m_pDeviceContext->IASetVertexBuffers(0, 1, m_pDebugVertexBuffer.GetAddressOf(), &stride, &offset);
+        m_pDeviceContext->IASetIndexBuffer(m_pOutlineIndexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
+        m_pDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP);
+        if (!transform || !collider) continue;
+
+        // Debug box uses the collider size
+        // Offset is also considered
+        Vector2 pos = transform->position + collider->offset;
+        m_constantBufferData.Model = Matrix::CreateScale(collider->size.x , collider->size.y , 1.0f) * Matrix::CreateTranslation(pos.x, pos.y, 0.0f);
+        m_constantBufferData.Model = m_constantBufferData.Model.Transpose();
+
+        // Green if not colliding, Red if colliding
+        if (collider->isColliding)
+            m_constantBufferData.Color = Vector4(1.0f, 0.0f, 0.0f, 1.0f);
+        else
+            m_constantBufferData.Color = Vector4(0.0f, 1.0f, 0.0f, 1.0f);
+
+        D3D11_MAPPED_SUBRESOURCE ms;
+        m_pDeviceContext->Map(m_pConstantBuffer.Get(), NULL, D3D11_MAP_WRITE_DISCARD, NULL, &ms);
+        memcpy(ms.pData, &m_constantBufferData, sizeof(m_constantBufferData));
+        m_pDeviceContext->Unmap(m_pConstantBuffer.Get(), NULL);
+
+        m_pDeviceContext->VSSetConstantBuffers(0, 1, m_pConstantBuffer.GetAddressOf());
+        m_pDeviceContext->DrawIndexed(5, 0, 0);
     }
 }
 
