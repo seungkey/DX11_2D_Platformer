@@ -10,6 +10,10 @@ class Component
 {
 public:
     virtual ~Component() {}
-    virtual void Update(Entity& owner) { (void)owner; }
+    virtual void Update(Entity& owner, float dt = 0.0f)
+    {
+        (void)owner;
+        (void)dt;
+    }
 
 };

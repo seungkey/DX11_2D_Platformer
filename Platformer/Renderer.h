@@ -1,10 +1,17 @@
 #pragma once
-#include <wrl.h>
+
+#include <memory>
 #include <vector>
-#include <iostream>
+#include <wrl.h>
+
+#include <d3d11.h>
+#include <directxtk/SimpleMath.h>
+
+#include "ResourceManager.h"
 
 using Microsoft::WRL::ComPtr;
 using std::vector;
+using namespace DirectX::SimpleMath;
 
 class Entity;
 
@@ -14,6 +21,7 @@ struct ConstantBuffer
     Matrix View;
     Matrix Proj;
     Vector4 Color;
+    Vector4 UVRect;
 };
 
 class Renderer
@@ -22,57 +30,26 @@ public:
     void Initialize(HWND hwnd);
     void Render();
     void Clear();
-    void ComponentRender(const vector<std::shared_ptr<Entity>> &Entities);
+    void ComponentRender(const vector<std::shared_ptr<Entity>>& entities);
     void RenderEnd();
-    void RenderDebug(const vector<std::shared_ptr<Entity>>& Entities);
+    void RenderDebug(const vector<std::shared_ptr<Entity>>& entities);
+    ResourceManager* GetResourceManager() const { return m_resourceManager.get(); }
 
 private:
-    vector<Vector2> m_quad= { Vector2(-10.f, 10.f),Vector2(10.f,10.f),Vector2(-10.f, -10.f),Vector2(10.f, -10.f) };
+    bool CreateDefaultResources();
+    bool UpdateConstantBuffer();
 
-    template<typename T>
-    void CreateVertexBuffer(const vector<T>& vertices, ComPtr<ID3D11Buffer>& vertexBuffer) {
-        D3D11_BUFFER_DESC bufferDesc;
-        ZeroMemory(&bufferDesc, sizeof(bufferDesc));
-        bufferDesc.Usage = D3D11_USAGE_IMMUTABLE;
-        bufferDesc.ByteWidth = UINT(sizeof(T) * vertices.size());
-        bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-        bufferDesc.CPUAccessFlags = 0;
-        bufferDesc.StructureByteStride = sizeof(T);
+    int m_screenWidth = 0;
+    int m_screenHeight = 0;
 
-        D3D11_SUBRESOURCE_DATA vertexBufferData = {
-            0 }; // MS 예제에서 초기화하는 방식
-        vertexBufferData.pSysMem = vertices.data();
-        vertexBufferData.SysMemPitch = 0;
-        vertexBufferData.SysMemSlicePitch = 0;
-
-        const HRESULT hr = m_pDevice->CreateBuffer(
-            &bufferDesc, &vertexBufferData, vertexBuffer.GetAddressOf());
-        if (FAILED(hr)) {
-            std::cout << "CreateBuffer() failed. " << std::hex << hr
-                << std::endl;
-        };
-    }
-
-    int m_screenWidth;
-    int m_screenHeight;
-
-    // DirectX Objects
-    ComPtr<IDXGISwapChain>         m_pSwapChain;
-    ComPtr<ID3D11Device>           m_pDevice;
-    ComPtr<ID3D11DeviceContext>    m_pDeviceContext;
+    ComPtr<IDXGISwapChain> m_pSwapChain;
+    ComPtr<ID3D11Device> m_pDevice;
+    ComPtr<ID3D11DeviceContext> m_pDeviceContext;
     ComPtr<ID3D11RenderTargetView> m_pRenderTargetView;
-
-    // Shader objects
-    ComPtr<ID3D11VertexShader>     m_pVertexShader;
-    ComPtr<ID3D11PixelShader> m_pPixelShader;
-    ComPtr<ID3DBlob> m_pVSBlob; // Store VSBlob for input layout if needed
-    ComPtr<ID3D11InputLayout> m_pInputLayout;
-    ComPtr<ID3D11Buffer> m_pVertexBuffer;
-    ComPtr<ID3D11Buffer> m_pDebugVertexBuffer;
     ComPtr<ID3D11Buffer> m_pConstantBuffer;
-    ComPtr<ID3D11Buffer> m_pIndexBuffer;
-    ComPtr<ID3D11Buffer> m_pOutlineIndexBuffer;
+    ComPtr<ID3D11SamplerState> m_pSamplerState;
+    ComPtr<ID3D11BlendState> m_pAlphaBlendState;
 
-    ConstantBuffer m_constantBufferData;
+    std::unique_ptr<ResourceManager> m_resourceManager;
+    ConstantBuffer m_constantBufferData = {};
 };
-

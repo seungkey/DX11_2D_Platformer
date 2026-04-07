@@ -7,6 +7,9 @@ LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 // Entry point for a Windows application
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
+    HRESULT comResult = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    const bool shouldUninitializeCom = SUCCEEDED(comResult);
+
     WNDCLASSEX wcex;
 
     wcex.cbSize = sizeof(WNDCLASSEX);
@@ -23,7 +26,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     wcex.hIconSm = LoadIcon(nullptr, IDI_APPLICATION);
 
     if (!RegisterClassEx(&wcex))
+    {
+        if (shouldUninitializeCom)
+        {
+            CoUninitialize();
+        }
         return 1;
+    }
 
     RECT rc = { 0, 0, 1280, 720 };
     AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
@@ -41,7 +50,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     );
 
     if (!hwnd)
+    {
+        if (shouldUninitializeCom)
+        {
+            CoUninitialize();
+        }
         return 1;
+    }
     
     Game game;
     game.Initialize(hwnd);
@@ -64,6 +79,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     }
 
     game.Shutdown();
+
+    if (shouldUninitializeCom)
+    {
+        CoUninitialize();
+    }
 
     return (int)msg.wParam;
 }

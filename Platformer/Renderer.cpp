@@ -1,12 +1,129 @@
 #include "pch.h"
 #include "Renderer.h"
+
+#include <cstdint>
+#include <iostream>
+#include <vector>
+
+#include "BoxColliderComponent.h"
 #include "Entity.h"
+#include "RenderComponent.h"
+#include "ResourceManager.h"
+#include "TransformComponent.h"
+
+namespace
+{
+    constexpr float kDefaultHalfExtent = 10.0f;
+    constexpr UINT kTestSpriteFrameSize = 16;
+    constexpr UINT kTestSpriteFrameCount = 4;
+
+    struct SpriteVertex
+    {
+        Vector2 position;
+        Vector2 uv;
+    };
+
+    std::uint32_t MakeColor(std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint8_t a = 255)
+    {
+        return static_cast<std::uint32_t>(r)
+            | (static_cast<std::uint32_t>(g) << 8)
+            | (static_cast<std::uint32_t>(b) << 16)
+            | (static_cast<std::uint32_t>(a) << 24);
+    }
+
+    void SetPixel(
+        std::vector<std::uint32_t>& pixels,
+        UINT textureWidth,
+        UINT textureHeight,
+        int x,
+        int y,
+        std::uint32_t color)
+    {
+        if (x < 0 || y < 0 || x >= static_cast<int>(textureWidth) || y >= static_cast<int>(textureHeight))
+        {
+            return;
+        }
+
+        pixels[static_cast<size_t>(y) * textureWidth + static_cast<size_t>(x)] = color;
+    }
+
+    void FillRect(
+        std::vector<std::uint32_t>& pixels,
+        UINT textureWidth,
+        UINT textureHeight,
+        int left,
+        int top,
+        int width,
+        int height,
+        std::uint32_t color)
+    {
+        for (int y = 0; y < height; ++y)
+        {
+            for (int x = 0; x < width; ++x)
+            {
+                SetPixel(pixels, textureWidth, textureHeight, left + x, top + y, color);
+            }
+        }
+    }
+
+    std::vector<std::uint32_t> CreateTestSpriteSheetPixels(UINT frameSize, UINT frameCount)
+    {
+        const UINT textureWidth = frameSize * frameCount;
+        const UINT textureHeight = frameSize;
+        std::vector<std::uint32_t> pixels(textureWidth * textureHeight, MakeColor(0, 0, 0, 0));
+
+        const std::uint32_t outline = MakeColor(21, 24, 30, 255);
+        const std::uint32_t skin = MakeColor(255, 224, 189, 255);
+        const std::uint32_t shirt = MakeColor(80, 170, 255, 255);
+        const std::uint32_t pants = MakeColor(45, 70, 140, 255);
+        const std::uint32_t boots = MakeColor(120, 75, 45, 255);
+
+        for (UINT frame = 0; frame < frameCount; ++frame)
+        {
+            const int frameLeft = static_cast<int>(frame * frameSize);
+            const int bobOffset = (frame % 2 == 0) ? 0 : 1;
+            const int legShift = static_cast<int>(frame % frameCount);
+
+            FillRect(pixels, textureWidth, textureHeight, frameLeft + 4, 1 + bobOffset, 8, 4, skin);
+            FillRect(pixels, textureWidth, textureHeight, frameLeft + 4, 5 + bobOffset, 8, 5, shirt);
+            FillRect(pixels, textureWidth, textureHeight, frameLeft + 5, 10 + bobOffset, 6, 3, pants);
+
+            FillRect(pixels, textureWidth, textureHeight, frameLeft + 3 + (legShift == 1 ? 1 : 0), 8 + bobOffset, 1, 4, skin);
+            FillRect(pixels, textureWidth, textureHeight, frameLeft + 12 - (legShift == 3 ? 1 : 0), 8 + bobOffset, 1, 4, skin);
+
+            FillRect(pixels, textureWidth, textureHeight, frameLeft + 5 + (legShift == 2 ? -1 : 0), 13 + bobOffset, 2, 3, boots);
+            FillRect(pixels, textureWidth, textureHeight, frameLeft + 9 + (legShift == 0 ? 1 : 0), 13 + bobOffset, 2, 3, boots);
+
+            FillRect(pixels, textureWidth, textureHeight, frameLeft + 6, 3 + bobOffset, 1, 1, outline);
+            FillRect(pixels, textureWidth, textureHeight, frameLeft + 9, 3 + bobOffset, 1, 1, outline);
+
+            FillRect(pixels, textureWidth, textureHeight, frameLeft + 4, 1 + bobOffset, 8, 1, outline);
+            FillRect(pixels, textureWidth, textureHeight, frameLeft + 4, 4 + bobOffset, 8, 1, outline);
+            FillRect(pixels, textureWidth, textureHeight, frameLeft + 4, 5 + bobOffset, 1, 5, outline);
+            FillRect(pixels, textureWidth, textureHeight, frameLeft + 11, 5 + bobOffset, 1, 5, outline);
+        }
+
+        return pixels;
+    }
+}
 
 void Renderer::Initialize(HWND hwnd)
 {
-    m_screenWidth = 1280;
-    m_screenHeight = 720;
-    // Create a device and swap chain
+    RECT rc = {};
+    GetClientRect(hwnd, &rc);
+    m_screenWidth = rc.right - rc.left;
+    m_screenHeight = rc.bottom - rc.top;
+
+    if (m_screenWidth <= 0)
+    {
+        m_screenWidth = 1280;
+    }
+
+    if (m_screenHeight <= 0)
+    {
+        m_screenHeight = 720;
+    }
+
     DXGI_SWAP_CHAIN_DESC scd = {};
     scd.BufferCount = 2;
     scd.BufferDesc.Width = m_screenWidth;
@@ -21,76 +138,63 @@ void Renderer::Initialize(HWND hwnd)
     scd.Windowed = TRUE;
 
     HRESULT hr = D3D11CreateDeviceAndSwapChain(
-        nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION,
-        &scd, m_pSwapChain.GetAddressOf(), m_pDevice.GetAddressOf(), nullptr, m_pDeviceContext.GetAddressOf());
-    if (FAILED(hr)) return;
+        nullptr,
+        D3D_DRIVER_TYPE_HARDWARE,
+        nullptr,
+        0,
+        nullptr,
+        0,
+        D3D11_SDK_VERSION,
+        &scd,
+        m_pSwapChain.GetAddressOf(),
+        m_pDevice.GetAddressOf(),
+        nullptr,
+        m_pDeviceContext.GetAddressOf());
+    if (FAILED(hr))
+    {
+        return;
+    }
 
-    // Create a render target view
-    ComPtr<ID3D11Texture2D> pBackBuffer;
-    hr = m_pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), &pBackBuffer);
-    if (FAILED(hr)) return;
+    ComPtr<ID3D11Texture2D> backBuffer;
+    hr = m_pSwapChain->GetBuffer(
+        0,
+        __uuidof(ID3D11Texture2D),
+        reinterpret_cast<void**>(backBuffer.GetAddressOf()));
+    if (FAILED(hr))
+    {
+        return;
+    }
 
-    hr = m_pDevice->CreateRenderTargetView(pBackBuffer.Get(), nullptr, &m_pRenderTargetView);
-    if (FAILED(hr)) return;
+    hr = m_pDevice->CreateRenderTargetView(
+        backBuffer.Get(),
+        nullptr,
+        m_pRenderTargetView.GetAddressOf());
+    if (FAILED(hr))
+    {
+        return;
+    }
 
     m_pDeviceContext->OMSetRenderTargets(1, m_pRenderTargetView.GetAddressOf(), nullptr);
 
-    // Set up the viewport
-    D3D11_VIEWPORT vp;
-    vp.Width = (FLOAT)m_screenWidth;
-    vp.Height = (FLOAT)m_screenHeight;
+    D3D11_VIEWPORT vp = {};
+    vp.Width = static_cast<FLOAT>(m_screenWidth);
+    vp.Height = static_cast<FLOAT>(m_screenHeight);
     vp.MinDepth = 0.0f;
     vp.MaxDepth = 1.0f;
-    vp.TopLeftX = 0;
-    vp.TopLeftY = 0;
+    vp.TopLeftX = 0.0f;
+    vp.TopLeftY = 0.0f;
     m_pDeviceContext->RSSetViewports(1, &vp);
 
-    UINT compileFlags = 0;
-#if defined(DEBUG) || defined(_DEBUG)
-    compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-#endif
-
-    // Compile and create shaders
-    ComPtr<ID3DBlob> errorBlob;
-    ComPtr<ID3DBlob> pVSBlob;
-    hr = D3DCompileFromFile(L"VertexShader.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "VS_Main", "vs_4_0", compileFlags, 0, &pVSBlob, &errorBlob);
-    if (FAILED(hr))
-    {
-        if ((hr & D3D11_ERROR_FILE_NOT_FOUND) != 0) {
-            std::cout << "File not found." << std::endl;
-        }
-
-        // 에러 메시지가 있으면 출력
-        if (errorBlob) {
-            std::cout << "Shader compile error\n"
-                << (char*)errorBlob->GetBufferPointer() << std::endl;
-        }
-    }
-    hr = m_pDevice->CreateVertexShader(pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), nullptr, m_pVertexShader.GetAddressOf());
-    if (FAILED(hr)) return;
-
-    D3D11_INPUT_ELEMENT_DESC layout[] = { { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 }, };
-    hr = m_pDevice->CreateInputLayout(layout, ARRAYSIZE(layout), pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), m_pInputLayout.GetAddressOf());
-    if (FAILED(hr)) return;
-
-    ComPtr<ID3DBlob> pPSBlob;
-    hr = D3DCompileFromFile(L"PixelShader.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "PS_Main", "ps_4_0", compileFlags, 0, &pPSBlob, &errorBlob);
-    if (FAILED(hr)) return;
-    hr = m_pDevice->CreatePixelShader(pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize(), nullptr, m_pPixelShader.GetAddressOf());
-    if (FAILED(hr)) return;
-
-    //2d는 quad를 그려서 텍스쳐 매핑만 할 예정이라 공용으로 사용할 버텍스 버퍼 생성
-    //{ Vector2(-0.5f, 0.5f),Vector2(0.5f,0.5f),Vector2(-0.5f, -0.5f),Vector2(0.5f, -0.5f) };
-    
-
-    // Create constant buffer
     D3D11_BUFFER_DESC bd = {};
     bd.ByteWidth = sizeof(ConstantBuffer);
     bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
     bd.Usage = D3D11_USAGE_DYNAMIC;
-    hr = m_pDevice->CreateBuffer(&bd, nullptr, &m_pConstantBuffer);
-    if (FAILED(hr)) return;
+    hr = m_pDevice->CreateBuffer(&bd, nullptr, m_pConstantBuffer.GetAddressOf());
+    if (FAILED(hr))
+    {
+        return;
+    }
 
     D3D11_RASTERIZER_DESC rsDesc = {};
     rsDesc.FillMode = D3D11_FILL_SOLID;
@@ -99,146 +203,322 @@ void Renderer::Initialize(HWND hwnd)
     rsDesc.DepthClipEnable = TRUE;
 
     ComPtr<ID3D11RasterizerState> rsState;
-    m_pDevice->CreateRasterizerState(&rsDesc, &rsState);
-    m_pDeviceContext->RSSetState(rsState.Get());
-
-    std::vector<UINT> indices =
-    {
-        0, 1, 2,
-        2, 1, 3
-    };
-    D3D11_BUFFER_DESC ibDesc = {};
-    ibDesc.Usage = D3D11_USAGE_DEFAULT;
-    ibDesc.ByteWidth = static_cast<UINT>(sizeof(UINT) * indices.size());
-    ibDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-    ibDesc.CPUAccessFlags = 0;
-    ibDesc.MiscFlags = 0;
-    ibDesc.StructureByteStride = 0;
-
-    D3D11_SUBRESOURCE_DATA ibData = {};
-    ibData.pSysMem = indices.data();
-
-    hr = m_pDevice->CreateBuffer(&ibDesc, &ibData, m_pIndexBuffer.GetAddressOf());
+    hr = m_pDevice->CreateRasterizerState(&rsDesc, rsState.GetAddressOf());
     if (FAILED(hr))
     {
         return;
     }
 
-    // Initialize Outline Index Buffer
-    std::vector<UINT> outlineIndices = { 0, 1, 3, 2, 0 };
-    D3D11_BUFFER_DESC oibDesc = {};
-    oibDesc.Usage = D3D11_USAGE_DEFAULT;
-    oibDesc.ByteWidth = static_cast<UINT>(sizeof(UINT) * outlineIndices.size());
-    oibDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-    D3D11_SUBRESOURCE_DATA oibData = {};
-    oibData.pSysMem = outlineIndices.data();
-    m_pDevice->CreateBuffer(&oibDesc, &oibData, m_pOutlineIndexBuffer.GetAddressOf());
+    m_pDeviceContext->RSSetState(rsState.Get());
 
-    m_constantBufferData.Proj = Matrix::CreateOrthographicOffCenter(0.f, m_screenWidth, 0.f, m_screenHeight, 0.f, 1.0f);
-    m_constantBufferData.Proj = m_constantBufferData.Proj.Transpose();
-    //m_constantBufferData.Proj = Matrix::Matrix();
-    m_constantBufferData.View = Matrix::Matrix();
-    m_constantBufferData.Color = Vector4(1.0f, 1.0f, 1.0f, 1.0f); // Default white
+    D3D11_SAMPLER_DESC samplerDesc = {};
+    samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+    samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+    samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+    samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    samplerDesc.MinLOD = 0.0f;
+    samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
+
+    hr = m_pDevice->CreateSamplerState(&samplerDesc, m_pSamplerState.GetAddressOf());
+    if (FAILED(hr))
+    {
+        return;
+    }
+
+    D3D11_BLEND_DESC blendDesc = {};
+    blendDesc.RenderTarget[0].BlendEnable = TRUE;
+    blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+    blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+    blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+    blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+    blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+    blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+    blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+
+    hr = m_pDevice->CreateBlendState(&blendDesc, m_pAlphaBlendState.GetAddressOf());
+    if (FAILED(hr))
+    {
+        return;
+    }
+
+    m_constantBufferData.Proj =
+        Matrix::CreateOrthographicOffCenter(
+            0.0f,
+            static_cast<float>(m_screenWidth),
+            0.0f,
+            static_cast<float>(m_screenHeight),
+            0.0f,
+            1.0f)
+            .Transpose();
+    m_constantBufferData.View = Matrix::CreateTranslation(0.0f, 0.0f, 0.0f).Transpose();
+    m_constantBufferData.Color = Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+    m_constantBufferData.UVRect = Vector4(0.0f, 0.0f, 1.0f, 1.0f);
+
+    m_resourceManager = std::make_unique<ResourceManager>();
+    if (!m_resourceManager->Initialize(m_pDevice.Get()))
+    {
+        return;
+    }
+
+    CreateDefaultResources();
+}
+
+bool Renderer::CreateDefaultResources()
+{
+    if (!m_resourceManager)
+    {
+        return false;
+    }
+
+    const D3D11_INPUT_ELEMENT_DESC layout[] =
+    {
+        { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+    };
+
+    if (!m_resourceManager->LoadShaderProgram(
+            "default",
+            L"VertexShader.hlsl",
+            L"PixelShader.hlsl",
+            layout,
+            ARRAYSIZE(layout)))
+    {
+        std::cout << "Failed to load default shader program." << std::endl;
+        return false;
+    }
+
+    const std::vector<SpriteVertex> quad =
+    {
+        { Vector2(-kDefaultHalfExtent, kDefaultHalfExtent), Vector2(0.0f, 0.0f) },
+        { Vector2(kDefaultHalfExtent, kDefaultHalfExtent), Vector2(1.0f, 0.0f) },
+        { Vector2(-kDefaultHalfExtent, -kDefaultHalfExtent), Vector2(0.0f, 1.0f) },
+        { Vector2(kDefaultHalfExtent, -kDefaultHalfExtent), Vector2(1.0f, 1.0f) },
+    };
+    const std::vector<UINT> quadIndices = { 0, 1, 2, 2, 1, 3 };
+
+    if (!m_resourceManager->CreateMesh("quad", quad, quadIndices))
+    {
+        std::cout << "Failed to create default quad mesh." << std::endl;
+        return false;
+    }
+
+    const std::vector<SpriteVertex> debugQuad =
+    {
+        { Vector2(-0.5f, 0.5f), Vector2(0.0f, 0.0f) },
+        { Vector2(0.5f, 0.5f), Vector2(1.0f, 0.0f) },
+        { Vector2(-0.5f, -0.5f), Vector2(0.0f, 1.0f) },
+        { Vector2(0.5f, -0.5f), Vector2(1.0f, 1.0f) },
+    };
+    const std::vector<UINT> debugIndices = { 0, 1, 3, 2, 0 };
+
+    if (!m_resourceManager->CreateMesh(
+            "quad_debug",
+            debugQuad,
+            debugIndices,
+            D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP))
+    {
+        std::cout << "Failed to create debug quad mesh." << std::endl;
+        return false;
+    }
+
+    if (!m_resourceManager->CreateTexture2D("white", 1, 1, { MakeColor(255, 255, 255, 255) }))
+    {
+        std::cout << "Failed to create default white texture." << std::endl;
+        return false;
+    }
+
+    if (!m_resourceManager->CreateTexture2D(
+            "player_test",
+            kTestSpriteFrameSize * kTestSpriteFrameCount,
+            kTestSpriteFrameSize,
+            CreateTestSpriteSheetPixels(kTestSpriteFrameSize, kTestSpriteFrameCount)))
+    {
+        std::cout << "Failed to create test sprite sheet." << std::endl;
+        return false;
+    }
+
+    return true;
 }
 
 void Renderer::Clear()
 {
-    float clearColor[4] = { 0.0f, 0.2f, 0.4f, 1.0f };
+    if (!m_pDeviceContext || !m_pRenderTargetView)
+    {
+        return;
+    }
+
+    constexpr float clearColor[4] = { 0.0f, 0.2f, 0.4f, 1.0f };
     m_pDeviceContext->ClearRenderTargetView(m_pRenderTargetView.Get(), clearColor);
 }
 
-void Renderer::ComponentRender(const vector<std::shared_ptr<Entity>> &Entities)
+void Renderer::ComponentRender(const vector<std::shared_ptr<Entity>>& entities)
 {
-    m_pDeviceContext->IASetIndexBuffer(m_pIndexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
-    m_pDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    m_constantBufferData.Color = Vector4(1.0f, 1.0f, 1.0f, 1.0f); // White for standard render
-    m_quad = { Vector2(-10.f, 10.f),Vector2(10.f,10.f),Vector2(-10.f, -10.f),Vector2(10.f, -10.f) };
-    CreateVertexBuffer(m_quad, m_pVertexBuffer);
-    for (auto E : Entities)
+    if (!m_pDeviceContext || !m_resourceManager)
     {
-        TransformComponent* Comp = E->GetComponent<TransformComponent>();
-        if (!Comp) continue;
+        return;
+    }
 
-        // Base quad is 20x20, so we scale it.
-        // If scale is 50x50, final size is 50x50.
-        // Wait, base quad is (-10 to 10), so size is 20.
-        // Scale 1.0 means 20px. 
-        // User said they adjusted scale for (20,20) quad.
-        m_constantBufferData.Model = Matrix::CreateScale(Comp->scale.x, Comp->scale.y, 1.0f) * Matrix::CreateTranslation(Comp->position.x, Comp->position.y, 0.0f);
-        m_constantBufferData.Model = m_constantBufferData.Model.Transpose();
-        m_constantBufferData.Color = Vector4(1.0f, 1.0f, 1.0f, 1.0f);
-        D3D11_MAPPED_SUBRESOURCE ms;
-        m_pDeviceContext->Map(m_pConstantBuffer.Get(), NULL, D3D11_MAP_WRITE_DISCARD, NULL, &ms);
-        memcpy(ms.pData, &m_constantBufferData, sizeof(m_constantBufferData));
-        m_pDeviceContext->Unmap(m_pConstantBuffer.Get(), NULL);
+    for (const auto& entity : entities)
+    {
+        auto* transform = entity->GetComponent<TransformComponent>();
+        auto* renderComponent = entity->GetComponent<RenderComponent>();
+        if (!transform || !renderComponent || !renderComponent->visible)
+        {
+            continue;
+        }
 
-        m_pDeviceContext->VSSetConstantBuffers(0, 1, m_pConstantBuffer.GetAddressOf());
-        m_pDeviceContext->PSSetConstantBuffers(0, 1, m_pConstantBuffer.GetAddressOf());
-        m_pDeviceContext->DrawIndexed(6, 0, 0);
+        const ShaderProgramResource* shaderProgram =
+            m_resourceManager->GetShaderProgram(renderComponent->shaderId);
+        const MeshResource* mesh =
+            m_resourceManager->GetMesh(renderComponent->meshId);
+        const TextureResource* texture =
+            m_resourceManager->GetTexture(renderComponent->textureId);
+        if (!texture)
+        {
+            texture = m_resourceManager->GetTexture("white");
+        }
+
+        if (!shaderProgram || !mesh || !texture)
+        {
+            continue;
+        }
+
+        m_pDeviceContext->VSSetShader(shaderProgram->vertexShader.Get(), nullptr, 0);
+        m_pDeviceContext->PSSetShader(shaderProgram->pixelShader.Get(), nullptr, 0);
+        m_pDeviceContext->IASetInputLayout(shaderProgram->inputLayout.Get());
+
+        UINT stride = mesh->vertexStride;
+        UINT offset = 0;
+        ID3D11Buffer* vertexBuffer = mesh->vertexBuffer.Get();
+        m_pDeviceContext->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+        m_pDeviceContext->IASetIndexBuffer(mesh->indexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
+        m_pDeviceContext->IASetPrimitiveTopology(mesh->topology);
+        ID3D11ShaderResourceView* shaderResourceView = texture->shaderResourceView.Get();
+        m_pDeviceContext->PSSetShaderResources(0, 1, &shaderResourceView);
+        m_pDeviceContext->PSSetSamplers(0, 1, m_pSamplerState.GetAddressOf());
+
+        m_constantBufferData.Model =
+            (Matrix::CreateScale(transform->scale.x, transform->scale.y, 1.0f) *
+             Matrix::CreateTranslation(transform->position.x, transform->position.y, 0.0f))
+                .Transpose();
+        m_constantBufferData.Color = renderComponent->color;
+        m_constantBufferData.UVRect = Vector4(
+            renderComponent->uvOffset.x,
+            renderComponent->uvOffset.y,
+            renderComponent->uvScale.x,
+            renderComponent->uvScale.y);
+
+        if (!UpdateConstantBuffer())
+        {
+            continue;
+        }
+
+        m_pDeviceContext->DrawIndexed(mesh->indexCount, 0, 0);
     }
 }
 
-void Renderer::RenderDebug(const vector<std::shared_ptr<Entity>>& Entities)
+void Renderer::RenderDebug(const vector<std::shared_ptr<Entity>>& entities)
 {
-    UINT stride = sizeof(Vector2);
-    UINT offset = 0;
-    
-
-    for (auto E : Entities)
+    if (!m_pDeviceContext || !m_resourceManager)
     {
-        auto transform = E->GetComponent<TransformComponent>();
-        auto collider = E->GetComponent<BoxColliderComponent>();
-        m_quad = { Vector2(-1.0f/2,1.0f/2),Vector2(1.0f / 2,1.0f/ 2),Vector2(-1.0f/ 2,-1.0f/ 2),Vector2(1.0f/ 2,-1.0f/ 2) };
-        CreateVertexBuffer(m_quad, m_pDebugVertexBuffer);
-        m_pDeviceContext->IASetVertexBuffers(0, 1, m_pDebugVertexBuffer.GetAddressOf(), &stride, &offset);
-        m_pDeviceContext->IASetIndexBuffer(m_pOutlineIndexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
-        m_pDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP);
-        if (!transform || !collider) continue;
-
-        // Debug box uses the collider size
-        // Offset is also considered
-        Vector2 pos = transform->position + collider->offset;
-        m_constantBufferData.Model = Matrix::CreateScale(collider->size.x , collider->size.y , 1.0f) * Matrix::CreateTranslation(pos.x, pos.y, 0.0f);
-        m_constantBufferData.Model = m_constantBufferData.Model.Transpose();
-
-        // Green if not colliding, Red if colliding
-        if (collider->isColliding)
-            m_constantBufferData.Color = Vector4(1.0f, 0.0f, 0.0f, 1.0f);
-        else
-            m_constantBufferData.Color = Vector4(0.0f, 1.0f, 0.0f, 1.0f);
-
-        D3D11_MAPPED_SUBRESOURCE ms;
-        m_pDeviceContext->Map(m_pConstantBuffer.Get(), NULL, D3D11_MAP_WRITE_DISCARD, NULL, &ms);
-        memcpy(ms.pData, &m_constantBufferData, sizeof(m_constantBufferData));
-        m_pDeviceContext->Unmap(m_pConstantBuffer.Get(), NULL);
-
-        m_pDeviceContext->VSSetConstantBuffers(0, 1, m_pConstantBuffer.GetAddressOf());
-        m_pDeviceContext->DrawIndexed(5, 0, 0);
+        return;
     }
+
+    const ShaderProgramResource* shaderProgram = m_resourceManager->GetShaderProgram("default");
+    const MeshResource* debugMesh = m_resourceManager->GetMesh("quad_debug");
+    const TextureResource* texture = m_resourceManager->GetTexture("white");
+    if (!shaderProgram || !debugMesh || !texture)
+    {
+        return;
+    }
+
+    m_pDeviceContext->VSSetShader(shaderProgram->vertexShader.Get(), nullptr, 0);
+    m_pDeviceContext->PSSetShader(shaderProgram->pixelShader.Get(), nullptr, 0);
+    m_pDeviceContext->IASetInputLayout(shaderProgram->inputLayout.Get());
+
+    UINT stride = debugMesh->vertexStride;
+    UINT offset = 0;
+    ID3D11Buffer* vertexBuffer = debugMesh->vertexBuffer.Get();
+    m_pDeviceContext->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+    m_pDeviceContext->IASetIndexBuffer(debugMesh->indexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
+    m_pDeviceContext->IASetPrimitiveTopology(debugMesh->topology);
+    ID3D11ShaderResourceView* shaderResourceView = texture->shaderResourceView.Get();
+    m_pDeviceContext->PSSetShaderResources(0, 1, &shaderResourceView);
+    m_pDeviceContext->PSSetSamplers(0, 1, m_pSamplerState.GetAddressOf());
+
+    for (const auto& entity : entities)
+    {
+        auto* transform = entity->GetComponent<TransformComponent>();
+        auto* collider = entity->GetComponent<BoxColliderComponent>();
+        if (!transform || !collider)
+        {
+            continue;
+        }
+
+        const Vector2 position = transform->position + collider->offset;
+        m_constantBufferData.Model =
+            (Matrix::CreateScale(collider->size.x, collider->size.y, 1.0f) *
+             Matrix::CreateTranslation(position.x, position.y, 0.0f))
+                .Transpose();
+        m_constantBufferData.Color = collider->isColliding
+                                         ? Vector4(1.0f, 0.0f, 0.0f, 1.0f)
+                                         : Vector4(0.0f, 1.0f, 0.0f, 1.0f);
+        m_constantBufferData.UVRect = Vector4(0.0f, 0.0f, 1.0f, 1.0f);
+
+        if (!UpdateConstantBuffer())
+        {
+            continue;
+        }
+
+        m_pDeviceContext->DrawIndexed(debugMesh->indexCount, 0, 0);
+    }
+}
+
+bool Renderer::UpdateConstantBuffer()
+{
+    if (!m_pDeviceContext || !m_pConstantBuffer)
+    {
+        return false;
+    }
+
+    D3D11_MAPPED_SUBRESOURCE mappedSubresource = {};
+    const HRESULT hr = m_pDeviceContext->Map(
+        m_pConstantBuffer.Get(),
+        0,
+        D3D11_MAP_WRITE_DISCARD,
+        0,
+        &mappedSubresource);
+    if (FAILED(hr))
+    {
+        return false;
+    }
+
+    memcpy(mappedSubresource.pData, &m_constantBufferData, sizeof(m_constantBufferData));
+    m_pDeviceContext->Unmap(m_pConstantBuffer.Get(), 0);
+
+    ID3D11Buffer* constantBuffer = m_pConstantBuffer.Get();
+    m_pDeviceContext->VSSetConstantBuffers(0, 1, &constantBuffer);
+    m_pDeviceContext->PSSetConstantBuffers(0, 1, &constantBuffer);
+
+    return true;
 }
 
 void Renderer::RenderEnd()
 {
-    m_pSwapChain->Present(1, 0);
+    if (m_pSwapChain)
+    {
+        m_pSwapChain->Present(1, 0);
+    }
 }
 
 void Renderer::Render()
 {
     Clear();
 
-    // --- Set up pipeline for drawing ---
-    m_pDeviceContext->VSSetShader(m_pVertexShader.Get(), nullptr, 0);
-    m_pDeviceContext->PSSetShader(m_pPixelShader.Get(), nullptr, 0);
-    m_pDeviceContext->IASetInputLayout(m_pInputLayout.Get());
-    UINT stride = sizeof(Vector2);
-    UINT offset = 0;
-    m_pDeviceContext->IASetVertexBuffers(0, 1, m_pVertexBuffer.GetAddressOf(), &stride, &offset);
-    m_pDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    m_pDeviceContext->IASetIndexBuffer(m_pIndexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
-    m_pDeviceContext->OMSetRenderTargets(1, m_pRenderTargetView.GetAddressOf(), nullptr);
-    // --- Draw all entities with RenderComponent and TransformComponent ---
-
-
-    // --- Present ---
-    
+    if (m_pDeviceContext && m_pRenderTargetView)
+    {
+        m_pDeviceContext->OMSetRenderTargets(1, m_pRenderTargetView.GetAddressOf(), nullptr);
+        const float blendFactor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        m_pDeviceContext->OMSetBlendState(m_pAlphaBlendState.Get(), blendFactor, 0xFFFFFFFF);
+    }
 }

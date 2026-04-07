@@ -8,5 +8,6 @@ PS_INPUT VS_Main(VS_INPUT input)
     pos = mul(pos, View);
     pos = mul(pos, Proj);
     output.Pos = pos;
+    output.UV = UVRect.xy + (input.UV * UVRect.zw);
     return output;
 }

@@ -31,14 +31,14 @@ public:
         return nullptr;
     }
 
-    void UpdateComponents()
+    void UpdateComponents(float dt = 0.0f)
     {
         for (auto& componentPair : m_components)
         {
             auto& component = componentPair.second;
             if (component)
             {
-                component->Update(*this);
+                component->Update(*this, dt);
             }
         }
     }

@@ -43,11 +43,17 @@
     <Filter Include="Manager\CollisionManager">
       <UniqueIdentifier>{7885f366-be7e-49ac-b848-6dd21eb06940}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Manager\ResourceManager">
+      <UniqueIdentifier>{5a83f0b1-e2d0-42ca-a454-5552b05b833b}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Simulation">
       <UniqueIdentifier>{a21528d0-d740-43d0-a861-4cb7abf6dc3a}</UniqueIdentifier>
     </Filter>
     <Filter Include="Component\Movement">
       <UniqueIdentifier>{8bd1b305-f251-4697-86d9-304fc648f95a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Component\SpriteAnimation">
+      <UniqueIdentifier>{246de79e-e875-4382-95ec-af5319fce2ee}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -89,6 +95,12 @@
     </ClCompile>
     <ClCompile Include="PlatformerSimulation.cpp">
       <Filter>Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="ResourceManager.cpp">
+      <Filter>Manager\ResourceManager</Filter>
+    </ClCompile>
+    <ClCompile Include="SpriteAnimationComponent.cpp">
+      <Filter>Component\SpriteAnimation</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -136,6 +148,12 @@
     </ClInclude>
     <ClInclude Include="InputCommand.h">
       <Filter>Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="ResourceManager.h">
+      <Filter>Manager\ResourceManager</Filter>
+    </ClInclude>
+    <ClInclude Include="SpriteAnimationComponent.h">
+      <Filter>Component\SpriteAnimation</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

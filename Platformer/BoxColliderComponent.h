@@ -22,7 +22,7 @@ public:
     BoxColliderComponent(Vector2 s = Vector2(1.0f, 1.0f), Vector2 off = Vector2(0.f, 0.f))
         : size(s), offset(off), type(CollisionType::BLOCK) {}
 
-    void Update(Entity& owner) override;
+    void Update(Entity& owner, float dt = 0.0f) override;
     void UpdateBounds(const Vector2& position)
     {
         Vector2 center = position + offset;
