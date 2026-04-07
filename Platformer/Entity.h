@@ -31,6 +31,18 @@ public:
         return nullptr;
     }
 
+    void UpdateComponents()
+    {
+        for (auto& componentPair : m_components)
+        {
+            auto& component = componentPair.second;
+            if (component)
+            {
+                component->Update(*this);
+            }
+        }
+    }
+
 private:
     std::unordered_map<std::type_index, std::unique_ptr<Component>> m_components;
 };

@@ -1,7 +1,6 @@
 #include "pch.h"
 #include "CollisionManager.h"
 #include "Entity.h"
-#include "TransformComponent.h"
 #include "BoxColliderComponent.h"
 
 bool CollisionManager::CheckAABB(const BoxColliderComponent& a, const BoxColliderComponent& b)
@@ -15,17 +14,14 @@ bool CollisionManager::CheckCollision(std::shared_ptr<Entity> a, std::shared_ptr
 {
     if (!a || !b) return false;
 
-    auto transformA = a->GetComponent<TransformComponent>();
+    a->UpdateComponents();
+    b->UpdateComponents();
+
     auto colliderA = a->GetComponent<BoxColliderComponent>();
-    auto transformB = b->GetComponent<TransformComponent>();
     auto colliderB = b->GetComponent<BoxColliderComponent>();
 
-    if (!transformA || !colliderA || !transformB || !colliderB)
+    if (!colliderA || !colliderB)
         return false;
-
-    // Update bounds based on current position
-    colliderA->UpdateBounds(transformA->position);
-    colliderB->UpdateBounds(transformB->position);
 
     return CheckAABB(*colliderA, *colliderB);
 }

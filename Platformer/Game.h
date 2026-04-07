@@ -1,6 +1,8 @@
 #pragma once
+#include <cstdint>
 #include <vector>
 #include "Entity.h"
+#include "InputCommand.h"
 #include "Renderer.h"
 
 // Constant buffer structure
@@ -20,7 +22,8 @@ public:
     std::vector<std::shared_ptr<Entity>> m_entities; // To track all entities for easy loop
 
 private:
-   
+    void CapturePlayerInput();
+    void ResetCollisionStates();
 
     HWND m_hwnd;
 
@@ -28,7 +31,8 @@ private:
 
     // Game Objects
     std::shared_ptr<Entity> m_player;
-    Vector2 m_playerVelocity; // Velocity is often a separate component, but for now we can keep it or make a PhysicsComponent later.
+    InputCommand m_pendingInput;
+    std::uint32_t m_simulationTick;
 
     std::vector<std::shared_ptr<Entity>> m_platforms;
 };

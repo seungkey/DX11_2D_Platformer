@@ -155,7 +155,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CollisionManager.h" />
+    <ClInclude Include="MovementComponent.h" />
+    <ClInclude Include="PlatformerSimulation.h" />
     <ClInclude Include="InputManager.h" />
+    <ClInclude Include="InputCommand.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="Game.h" />
     <ClInclude Include="Component.h" />
@@ -170,6 +173,8 @@
   <ItemGroup>
     <ClCompile Include="BoxColliderComponent.cpp" />
     <ClCompile Include="CollisionManager.cpp" />
+    <ClCompile Include="MovementComponent.cpp" />
+    <ClCompile Include="PlatformerSimulation.cpp" />
     <ClCompile Include="InputManager.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
